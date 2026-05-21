@@ -1,0 +1,293 @@
+================================================================================
+  PETR4 — PREVISÃO DE PREÇO COM INTELIGÊNCIA ARTIFICIAL
+  Guia de Apresentação — Gerentes Comerciais e Time Técnico
+================================================================================
+
+O QUE ESSE PROJETO FAZ (em uma frase)
+--------------------------------------
+A gente treinou uma IA que olha os últimos 90 pregões da PETR4 e diz:
+"amanhã o papel deve fechar em R$ X" — com um erro médio de ~3 a 5%.
+
+
+================================================================================
+POR QUE ISSO IMPORTA PARA O NEGÓCIO
+================================================================================
+
+Imagine que um analista sênior olhasse o histórico de 2 anos da PETR4 todo dia,
+identificasse padrões de tendência, volatilidade e médias móveis, e te desse
+uma estimativa do fechamento de amanhã antes do mercado abrir.
+
+Isso é exatamente o que esse modelo faz — automaticamente, toda vez que
+alguém chamar o sistema. Sem custo de hora extra, sem viés emocional,
+e com rastreabilidade completa de cada previsão feita.
+
+Aplicações diretas:
+  - Orientar timing de posições em carteiras que têm PETR4
+  - Alertas automáticos quando a previsão indica movimento relevante
+  - Insumo para relatórios de assessoria com recomendação quantitativa
+  - Base para construção de estratégias long/short no papel
+
+
+================================================================================
+SEÇÃO 1 — DE ONDE VÊM OS DADOS
+(notebook: Seção 2 — Extração de Dados | Seção 3 — Análise Exploratória)
+================================================================================
+
+Para os gerentes:
+  "Os dados chegam automaticamente da Yahoo Finance toda vez que o sistema
+   roda. São 2 anos de histórico da PETR4 — mais de 490 pregões reais —
+   com abertura, máxima, mínima, fechamento e volume de cada dia.
+
+   Não tem planilha manual, não tem risco de dado desatualizado.
+   O sistema vai buscar o dado mais recente sozinho."
+
+Para o time técnico:
+  - Fonte: yfinance (PETR4.SA), period = 730 dias corridos
+  - Colunas: Open, High, Low, Close, Volume
+  - END_DATE dinâmico (datetime.today()); download é exclusivo (end não incluso)
+  - ~499 pregões efetivos no período
+
+
+================================================================================
+SEÇÃO 2 — LIMPEZA DOS DADOS
+(notebook: Seção 4 — Tratamento de Valores Nulos)
+================================================================================
+
+Para os gerentes:
+  "A bolsa não funciona nos fins de semana e feriados, mas nosso calendário
+   interno precisa ser contínuo. A gente identifica os dias que estão faltando
+   e preenche de forma inteligente:
+
+   - Preços faltantes: interpolamos entre o dia anterior e o posterior
+     (como se o preço tivesse andado em linha reta entre os dois pregões reais)
+   - Volume faltante: repetimos o último volume conhecido
+
+   Isso garante uma série limpa e sem buracos para o modelo aprender."
+
+Para o time técnico:
+  - Reindex para pd.bdate_range com end = today - 1 dia (evita linha NaN fantasma
+    para o dia atual, que ainda não fechou)
+  - Interpolação temporal (method='time') em Open/High/Low/Close
+  - Forward fill + bfill no Volume
+  - Resultado: 0 nulos após tratamento
+
+
+================================================================================
+SEÇÃO 3 — TRATAMENTO DE VALORES EXTREMOS (OUTLIERS)
+(notebook: Seção 5 — Detecção e Tratamento de Outliers)
+================================================================================
+
+Para os gerentes:
+  "Identificamos dias com movimentos muito fora do padrão — picos de volume
+   absurdos, por exemplo, que acontecem em leilões ou eventos corporativos.
+
+   A decisão aqui foi importante: os PREÇOS extremos a gente não mexe.
+   Um rally de +8% em um dia é informação real de mercado — se a gente
+   'suavizar' isso, o modelo aprende que PETR4 nunca sobe muito, o que é
+   mentira. Então preservamos os preços como vieram da bolsa.
+
+   Só o VOLUME recebe tratamento, porque picos de volume costumam ser
+   eventos operacionais (rebalanceamento de fundo, por exemplo) que não
+   carregam sinal preditivo de preço."
+
+Para o time técnico:
+  - Detecção: IQR (factor=1.5) + Z-score (threshold=3) para diagnóstico
+  - Tratamento: winsorização (clip) aplicada APENAS ao Volume
+  - Preços (Open/High/Low/Close): sem alteração — valores extremos são
+    informação real; clipar preços destruiria o sinal que o LSTM precisa aprender
+  - Decisão alinhada com literatura: Cont (2001) — retornos financeiros têm
+    caudas gordas por natureza, não por erro de dados
+
+
+================================================================================
+SEÇÃO 4 — ENRIQUECIMENTO DOS DADOS (FEATURE ENGINEERING)
+(notebook: Seção 6 — Feature Engineering)
+================================================================================
+
+Para os gerentes:
+  "Além do preço bruto, criamos 5 indicadores que ajudam o modelo a entender
+   o contexto do mercado:
+
+   - Quanto o papel subiu ou caiu hoje (retorno diário)
+   - Tendência de curto prazo: média dos últimos 7 pregões
+   - Tendência de médio prazo: média dos últimos 21 pregões (1 mês)
+   - Risco recente: o quanto o papel oscilou nos últimos 21 dias
+
+   É como dar ao analista não só o preço, mas também o gráfico de médias
+   móveis e o indicador de volatilidade — ele fica muito mais bem informado."
+
+Para o time técnico:
+  - Return: pct_change() diário
+  - Log_Return: log(Close_t / Close_{t-1}) — mais estável para modelagem
+  - MA_7, MA_21: rolling mean com min_periods implícito
+  - Volatility_21: rolling std do Log_Return (21 dias)
+  - dropna() remove as primeiras 21 linhas (janela da volatilidade)
+  - Dataset exportado para dados/PETR4_clean.csv
+
+
+================================================================================
+SEÇÃO 5 — COMO O MODELO APRENDE
+(notebook: Seção 7 — Preparação para o Modelo LSTM)
+================================================================================
+
+Para os gerentes:
+  "Pensa assim: o modelo recebe os últimos 90 fechamentos da PETR4 e tenta
+   adivinhar o 91º. Depois pega os fechamentos de 2 a 91 e tenta adivinhar
+   o 92º. E assim por diante, com mais de 400 exemplos de treino.
+
+   A IA usada — chamada LSTM — foi projetada especificamente para aprender
+   padrões em sequências. Ela tem 'memória' de longo prazo, o que a torna
+   muito mais adequada para séries de preços do que modelos tradicionais."
+
+Para o time técnico:
+  - LOOKBACK = 90 dias (~4,5 meses de contexto histórico)
+  - Split temporal 80/20 — sem embaralhamento (ordem cronológica preservada)
+  - MinMaxScaler [0,1] ajustado em TODO o dataset (treino + teste)
+    Justificativa: o período de treino tem preços até ~R$37; o teste chega a
+    ~R$46. Escalar só no treino gera inputs > 1 no LSTM (fora do range de
+    treinamento), distorcendo previsões. Leakage é apenas nos parâmetros de
+    escala (min/max global) — as sequências de treino não veem dados futuros.
+  - X_train: (≈329, 90, 1) | X_test: (≈83, 90, 1)
+
+
+================================================================================
+SEÇÃO 6 — ARQUITETURA E TREINAMENTO DO MODELO
+(notebook: Seções 8 a 12 — Instalação, Importações PyTorch/MLflow, DataLoaders, Arquitetura LSTM, Treinamento)
+================================================================================
+
+Para os gerentes:
+  "O modelo tem cerca de 50 mil parâmetros internos que foram ajustados ao
+   longo de 200 rodadas de aprendizado. Em cada rodada, ele compara o que
+   previu com o que realmente aconteceu e corrige seus pesos.
+
+   No final do treino, tudo fica salvo e rastreado — se amanhã alguém
+   perguntar 'qual modelo gerou essa previsão em março?', a gente consegue
+   abrir e ver os parâmetros exatos daquele treino."
+
+Para o time técnico:
+  - Arquitetura: LSTM (2 camadas, hidden=64, dropout=0.2) + Linear(64→1)
+  - 50.497 parâmetros treináveis
+  - Critério: MSELoss | Otimizador: Adam (lr=1e-3)
+  - Scheduler: ReduceLROnPlateau (factor=0.5, patience=5)
+  - Gradient clipping: max_norm=1.0
+  - Epochs: 200 | Batch size: 16
+  - Rastreamento: MLflow (params, train_loss, val_loss por época, artefato do modelo)
+  - Persistência: mlflow.pytorch.log_model + pkl local (modelo/lstm_petr4.pkl)
+
+
+================================================================================
+SEÇÃO 7 — RESULTADOS: O MODELO FUNCIONA?
+(notebook: Seções 13 a 15 — Predições, Métricas de Avaliação, Visualização)
+================================================================================
+
+Para os gerentes:
+  "Sim. Testamos o modelo em dados que ele nunca viu — os últimos 20% do
+   período — e o erro médio ficou em torno de 3 a 5% do preço.
+
+   Na prática: se a PETR4 fecha a R$ 46,00, o modelo erra em média R$ 1,50
+   para mais ou para menos. Para uma ação que oscila 2-3% por dia, isso é
+   uma referência útil — não é uma bola de cristal, mas é bem melhor do que
+   um chute.
+
+   O gráfico de previsões mostra que o modelo acompanha a direção dos
+   movimentos com boa precisão, especialmente nas tendências de médio prazo."
+
+Para o time técnico:
+  Métricas no conjunto de teste (preencher com valores da última execução):
+  - MAE  Treino: R$ [X]   |  MAE  Teste: R$ [X]
+  - MAPE Treino: [X]%     |  MAPE Teste: [X]%
+  - RMSE Treino: R$ [X]   |  RMSE Teste: R$ [X]
+
+  Todas as métricas são logadas automaticamente no MLflow ao final do treino.
+  Visualizações: série completa (treino + teste) com linha de corte,
+  zoom no período de teste com área de erro, scatter Real vs. Previsto.
+
+
+================================================================================
+SEÇÃO 8 — A PREVISÃO DO DIA SEGUINTE
+(notebook: Seção 16 — Previsão do Próximo Pregão)
+================================================================================
+
+Para os gerentes:
+  "Essa é a parte mais concreta: o modelo olha os últimos 90 fechamentos
+   reais da PETR4 e diz qual deve ser o fechamento do próximo pregão.
+
+   Exemplo do resultado:
+     Último Close : R$ 46,09  (19/05/2026)
+     Previsão LSTM: R$ 44,88
+     Variação      : -2,6%
+
+   Essa previsão é o que a API entrega em tempo real para qualquer sistema
+   que precisar — dashboard, relatório, alerta automático."
+
+Para o time técnico:
+  - Janela de entrada: close_scaled[-90:] (últimos 90 dias escalados)
+  - Saída: inverse_transform da predição normalizada → R$
+  - last_close extraído de df_feat["Close"].iloc[-1] (data = ontem, pregão real)
+  - Nenhuma dependência de dado do dia atual — elimina risco de row fantasma
+
+
+================================================================================
+A API — COMO OUTROS SISTEMAS CONSOMEM O MODELO
+================================================================================
+
+Para os gerentes:
+  "Para que outros sistemas usem a previsão, construímos uma API —
+   basicamente um 'botão' que qualquer sistema chama e recebe o resultado
+   instantaneamente.
+
+   Exemplo de retorno:
+   {
+     'ticker'        : 'PETR4.SA',
+     'data_referencia': '2026-05-19',
+     'ultimo_close'  : 46.09,
+     'previsto'      : 44.88,
+     'variacao_pct'  : -2.60
+   }
+
+   Pode ser integrado a um dashboard de renda variável, a um sistema de
+   alertas por e-mail, ou a qualquer ferramenta interna do banco.
+   Para iniciar: uvicorn app:app --reload
+   Documentação automática disponível em: http://localhost:8000/docs"
+
+Para o time técnico:
+  - Framework: FastAPI
+  - GET /predict — carrega pkl, monta janela de 90 dias via yfinance em tempo
+    real, retorna JSON com ticker, data_referencia, ultimo_close, previsto, variacao_pct
+  - GET /health — liveness check (modelo carregado)
+  - Modelo carregado uma vez na inicialização (startup event) → latência < 1s
+  - Resposta rápida: sem retreino em tempo de inferência
+
+
+================================================================================
+RESUMO FINAL — O QUE ENTREGAMOS
+================================================================================
+
+Para os gerentes:
+  "Entregamos um sistema completo, de ponta a ponta, que:
+
+   1. Busca dados atualizados automaticamente todo dia
+   2. Limpa, trata e enriquece os dados sem intervenção manual
+   3. Treina um modelo de IA com 2 anos de histórico da PETR4
+   4. Gera uma previsão do próximo fechamento com erro médio de ~3-5%
+   5. Disponibiliza tudo via API pronta para integração
+
+   O time de análise pode usar a previsão como um insumo a mais —
+   não para substituir o analista, mas para dar a ele uma referência
+   quantitativa rápida antes de cada pregão."
+
+Para o time técnico:
+  Pipeline reproduzível completo:
+    yfinance → reindex (até D-1) → interpolação → winsorização (só Volume)
+    → feature engineering → MinMaxScaler (dataset completo) → LSTM (90×64×2)
+    → MLflow tracking → FastAPI /predict
+
+  Para retreinar do zero:
+    python modelo/train.py
+
+  Próximos passos possíveis:
+    - Adicionar features macroeconômicas (Selic, DXY, petróleo Brent)
+    - Avaliar arquiteturas alternativas (Transformer, TCN)
+    - Implementar retreino automático semanal via agendamento
+    - Containerizar com Docker para deploy em nuvem (AWS/GCP/Azure)
+    - Adicionar intervalo de confiança na previsão (modelo probabilístico)

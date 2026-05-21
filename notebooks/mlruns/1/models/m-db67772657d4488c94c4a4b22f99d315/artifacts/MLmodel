@@ -1,0 +1,23 @@
+artifact_path: file:///c:/Users/lucas/OneDrive/Documentos/FACULDADE/MLET/Pos_Tech_MLET-deep-learning/notebooks/mlruns/1/models/m-db67772657d4488c94c4a4b22f99d315/artifacts
+flavors:
+  python_function:
+    config:
+      device: null
+    data: data
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pytorch
+    pickle_module_name: mlflow.pytorch.pickle_module
+    python_version: 3.11.2
+  pytorch:
+    code: null
+    model_data: data
+    pytorch_version: 2.12.0+cpu
+mlflow_version: 3.12.0
+model_id: m-db67772657d4488c94c4a4b22f99d315
+model_size_bytes: 209089
+model_uuid: m-db67772657d4488c94c4a4b22f99d315
+prompts: null
+run_id: 0f25a748e8814d8aba0c6d6efb1a5a3c
+utc_time_created: '2026-05-20 22:50:06.666080'
