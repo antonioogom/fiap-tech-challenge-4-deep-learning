@@ -61,7 +61,7 @@ def predict():
     end   = datetime.today()
     start = end - timedelta(days=lookback * 2)  # margem para feriados / gaps
 
-    yf.set_tz_cache_location("/tmp/yfinance_cache")
+    yf.set_tz_cache_location("/tmp/yfinance_cache") # force
 
     df = yf.download(
         ticker,
