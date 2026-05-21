@@ -55,8 +55,8 @@ class PredictResponse(BaseModel):
 app = FastAPI(title="PETR4 LSTM Forecaster", version="1.0.0", lifespan=lifespan)
 @app.get("/predict", response_model=PredictResponse, summary="Previsão do próximo fechamento")
 def predict():
-    ticker   = _meta["ticker"]
-    lookback = _meta["lookback"]
+    ticker   = "PETR4.SA"
+    lookback = 120
 
     end   = datetime.today()
     start = end - timedelta(days=lookback * 2)  # margem para feriados / gaps
@@ -66,6 +66,7 @@ def predict():
         start=start.strftime("%Y-%m-%d"),
         end=end.strftime("%Y-%m-%d"),
         progress=False,
+        auto_adjust=True,
     )
     if df.empty:
         raise HTTPException(status_code=503, detail="Não foi possível obter dados do yfinance.")
